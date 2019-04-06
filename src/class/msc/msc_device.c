@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License (MIT)
  *
  * Copyright (c) 2018, hathach (tinyusb.org)
@@ -36,6 +36,8 @@
 #include "common/tusb_common.h"
 #include "msc_device.h"
 #include "device/usbd_pvt.h"
+
+#include "supervisor/spi_flash_api.h"
 
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF
@@ -248,28 +250,44 @@ int32_t proc_builtin_scsi(msc_cbw_t const * p_cbw, uint8_t* buffer, uint32_t buf
 
     case SCSI_CMD_INQUIRY:
     {
-      scsi_inquiry_resp_t inquiry_rsp =
-      {
-          .is_removable         = 1,
-          .version              = 2,
-          .response_data_format = 2,
-          // vendor_id, product_id, product_rev is space padded string
-          .vendor_id            = "",
-          .product_id           = "",
-          .product_rev          = "",
-      };
+      if(p_cbw->lun == 0x03) {
+        uint32_t address = 256*1024 + p_cbw->command[5] + (p_cbw->command[2] << 8) + (p_cbw->command[3] << 14) + 0x2000;
 
-      memset(inquiry_rsp.vendor_id, ' ', sizeof(inquiry_rsp.vendor_id));
-      memcpy(inquiry_rsp.vendor_id, CFG_TUD_MSC_VENDOR, tu_min32(strlen(CFG_TUD_MSC_VENDOR), sizeof(inquiry_rsp.vendor_id)));
+        ret = 5+96;
+        buffer[0] = 0x00;
+        buffer[1] = 0x80;
+        buffer[2] = 0x03;
+        buffer[3] = 0x02;
+        buffer[4] = 0x60;
+        spi_flash_read_data(address, buffer+5, 96);
+      } else if(p_cbw->lun == 0x02 && p_cbw->command[4] == 0x24) {
+          uint8_t truc[36] = {0x00 ,0x80 ,0x03 ,0x02 ,0x1F ,0x03 ,0x00 ,0x00 ,0x14 ,0x00 ,0xFA ,0x7C ,0xDC ,0xDE ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00};
+          ret = 36;
+          memcpy(buffer, &truc, ret);
+      } else {
+        scsi_inquiry_resp_t inquiry_rsp =
+        {
+            .is_removable         = 1,
+            .version              = 2,
+            .response_data_format = 2,
+            // vendor_id, product_id, product_rev is space padded string
+            .vendor_id            = "",
+            .product_id           = "",
+            .product_rev          = "",
+        };
 
-      memset(inquiry_rsp.product_id, ' ', sizeof(inquiry_rsp.product_id));
-      memcpy(inquiry_rsp.product_id, CFG_TUD_MSC_PRODUCT, tu_min32(strlen(CFG_TUD_MSC_PRODUCT), sizeof(inquiry_rsp.product_id)));
+        memset(inquiry_rsp.vendor_id, ' ', sizeof(inquiry_rsp.vendor_id));
+        memcpy(inquiry_rsp.vendor_id, CFG_TUD_MSC_VENDOR, tu_min32(strlen(CFG_TUD_MSC_VENDOR), sizeof(inquiry_rsp.vendor_id)));
 
-      memset(inquiry_rsp.product_rev, ' ', sizeof(inquiry_rsp.product_rev));
-      memcpy(inquiry_rsp.product_rev, CFG_TUD_MSC_PRODUCT_REV, tu_min32(strlen(CFG_TUD_MSC_PRODUCT_REV), sizeof(inquiry_rsp.product_rev)));
+        memset(inquiry_rsp.product_id, ' ', sizeof(inquiry_rsp.product_id));
+        memcpy(inquiry_rsp.product_id, CFG_TUD_MSC_PRODUCT, tu_min32(strlen(CFG_TUD_MSC_PRODUCT), sizeof(inquiry_rsp.product_id)));
 
-      ret = sizeof(inquiry_rsp);
-      memcpy(buffer, &inquiry_rsp, ret);
+        memset(inquiry_rsp.product_rev, ' ', sizeof(inquiry_rsp.product_rev));
+        memcpy(inquiry_rsp.product_rev, CFG_TUD_MSC_PRODUCT_REV, tu_min32(strlen(CFG_TUD_MSC_PRODUCT_REV), sizeof(inquiry_rsp.product_rev)));
+
+        ret = sizeof(inquiry_rsp);
+        memcpy(buffer, &inquiry_rsp, ret);
+      }
     }
     break;
 
